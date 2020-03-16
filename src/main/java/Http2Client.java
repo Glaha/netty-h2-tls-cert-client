@@ -32,6 +32,7 @@ import io.netty.util.AsciiString;
 import io.netty.util.CharsetUtil;
 import io.netty.util.internal.StringUtil;
 
+import java.io.File;
 import java.util.concurrent.TimeUnit;
 
 import static io.netty.buffer.Unpooled.wrappedBuffer;
@@ -46,7 +47,7 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
  */
 public final class Http2Client {
 
-    static final boolean SSL = System.getProperty("ssl") != null;
+    static final boolean SSL = true;
     static final String HOST = System.getProperty("host", "127.0.0.1");
     static final int PORT = Integer.parseInt(System.getProperty("port", SSL? "8443" : "8080"));
     static final String URL = System.getProperty("url", "/testH2");
@@ -68,11 +69,12 @@ public final class Http2Client {
         final SslContext sslCtx;
         if (ssl) {
             SslProvider provider = OpenSsl.isAlpnSupported() ? SslProvider.OPENSSL : SslProvider.JDK;
+            ClassLoader classLoader = Http2Client.class.getClassLoader();
+            File certFile = new File(classLoader.getResource("cert.pem").getFile());
+            File keyFile = new File(classLoader.getResource("key.pem").getFile());
             sslCtx = SslContextBuilder.forClient()
                 .sslProvider(provider)
-                /* NOTE: the cipher filter may not include all ciphers required by the HTTP/2 specification.
-                 * Please refer to the HTTP/2 specification for cipher requirements. */
-                .ciphers(Http2SecurityUtil.CIPHERS, SupportedCipherSuiteFilter.INSTANCE)
+                .ciphers(null, IdentityCipherSuiteFilter.INSTANCE)
                 .applicationProtocolConfig(new ApplicationProtocolConfig(
                         Protocol.ALPN,
                         // NO_ADVERTISE is currently the only mode supported by both OpenSsl and JDK providers.
@@ -82,7 +84,7 @@ public final class Http2Client {
                         ApplicationProtocolNames.HTTP_2,
                         ApplicationProtocolNames.HTTP_1_1))
                     .protocols("TLSv1.3")
-                    .keyManager("","")
+                    .keyManager(certFile, keyFile)
                     .trustManager(InsecureTrustManagerFactory.INSTANCE)
                     .build();
         } else {
@@ -109,7 +111,7 @@ public final class Http2Client {
 
             // Wait for the HTTP/2 upgrade to occur.
             Http2SettingsHandler http2SettingsHandler = initializer.settingsHandler();
-            http2SettingsHandler.awaitSettings(5, TimeUnit.SECONDS);
+            http2SettingsHandler.awaitSettings(30, TimeUnit.SECONDS);
 
             HttpResponseHandler responseHandler = initializer.responseHandler();
             int streamId = 3;
